@@ -1,0 +1,9 @@
+# Python caches
+__pycache__/
+*.pyc
+
+# Streamlit runtime
+.streamlit/secrets.toml
+
+# OS artifacts
+.DS_Store

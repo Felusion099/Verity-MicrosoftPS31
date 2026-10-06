@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-09-15T01:39:47",
+  "seed": 42,
+  "date_start": "2024-01-01",
+  "date_end": "2026-09-14",
+  "rows_raw": 81768,
+  "rows_fact": 81748,
+  "orders": 38395,
+  "products": 128,
+  "customers": 3500,
+  "regions": 5,
+  "territories": 20,
+  "gross_revenue": 11915912100.0,
+  "net_revenue": 10685560071.6,
+  "repairs": {
+    "region_typos_standardized": 6,
+    "missing_order_dates_dropped": 8,
+    "duplicate_rows_removed": 12
+  }
+}
