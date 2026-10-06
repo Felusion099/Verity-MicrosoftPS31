@@ -1,4 +1,5 @@
 # Python caches
+database/*.db
 __pycache__/
 *.pyc
 
