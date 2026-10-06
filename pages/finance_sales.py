@@ -315,18 +315,20 @@ def render(ctx: dict) -> None:
     
     st.markdown("")
     
-    # Drill-down table
+    # Drill-down table - show transactions without Finance Plan merge (OrderID vs PlanKey type mismatch)
     st.markdown("**Transaction-Level Detail**")
-    detail = df.merge(fp[["PlanKey", "FinanceTarget", "FinanceForecast", "ExpectedRevenue", "Budget"]], 
-                      left_on="OrderID", right_on="PlanKey", how="left")
+    detail = df[["OrderID", "Date", "Region", "Territory", "ProductName", "Category",
+                 "Quantity", "GrossSales", "DiscountAmount", "ReturnAmount", "NetRevenue"]].copy()
     
     detail_cols = ["OrderID", "Date", "Region", "Territory", "ProductName", "Category",
-                   "Quantity", "GrossSales", "DiscountAmount", "ReturnAmount", "NetRevenue",
-                   "FinanceTarget", "FinanceForecast", "ExpectedRevenue", "Budget"]
-    avail_cols = [c for c in detail_cols if c in detail.columns]
+                   "Quantity", "GrossSales", "DiscountAmount", "ReturnAmount", "NetRevenue"]
+    avail_cols = [c for c in ["OrderID", "Date", "Region", "Territory", "ProductName", "Category",
+                              "Quantity", "GrossSales", "DiscountAmount", "ReturnAmount", "NetRevenue"] 
+                  if c in df.columns]
     
     st.dataframe(
-        detail[avail_cols].sort_values("NetRevenue", ascending=False),
+        df[["OrderID", "Date", "Region", "Territory", "ProductName", "Category",
+            "Quantity", "GrossSales", "DiscountAmount", "ReturnAmount", "NetRevenue"]].sort_values("NetRevenue", ascending=False),
         use_container_width=True, height=400, hide_index=True,
         column_config={
             "OrderID": st.column_config.TextColumn("Order ID", width="small"),
@@ -339,10 +341,6 @@ def render(ctx: dict) -> None:
             "DiscountAmount": st.column_config.NumberColumn("Discount", format="₹,.0f"),
             "ReturnAmount": st.column_config.NumberColumn("Returns", format="₹,.0f"),
             "NetRevenue": st.column_config.NumberColumn("Net Revenue", format="₹,.0f"),
-            "FinanceTarget": st.column_config.NumberColumn("Finance Target", format="₹,.0f"),
-            "FinanceForecast": st.column_config.NumberColumn("Finance Forecast", format="₹,.0f"),
-            "ExpectedRevenue": st.column_config.NumberColumn("Expected Rev.", format="₹,.0f"),
-            "Budget": st.column_config.NumberColumn("Budget", format="₹,.0f"),
         },
         key="fs_detail"
     )
