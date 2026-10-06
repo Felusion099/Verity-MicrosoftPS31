@@ -19,7 +19,7 @@ import streamlit as st
 from src import config, data_loader, filters, insights, rls
 from src.context import build_context
 from src.formatting import format_datetime, format_int
-from pages import overview, revenue, products, regions, customers, data_quality, governance, ai_trainer
+from pages import overview, revenue, products, regions, customers, data_quality, governance, ai_trainer, finance_sales, anomaly_center, variance_analysis, data_sources
 
 st.set_page_config(page_title=config.APP_NAME, layout="wide",
                    initial_sidebar_state="expanded")
@@ -216,6 +216,7 @@ st.markdown(chip_html, unsafe_allow_html=True)
 page_defs = [
     st.Page(lambda: overview.render(st.session_state.ctx), title="Overview",
             url_path="overview", default=True),
+    st.Page(lambda: finance_sales.render(st.session_state.ctx), title="Finance ↔ Sales", url_path="finance_sales"),
     st.Page(lambda: revenue.render(st.session_state.ctx), title="Revenue", url_path="revenue"),
     st.Page(lambda: products.render(st.session_state.ctx), title="Products", url_path="products"),
     st.Page(lambda: regions.render(st.session_state.ctx), title="Regions", url_path="regions"),
@@ -223,6 +224,9 @@ page_defs = [
     st.Page(lambda: data_quality.render(st.session_state.ctx), title="Data Quality",
             url_path="data_quality"),
     st.Page(lambda: ai_trainer.render(st.session_state.ctx), title="AI Trainer", url_path="ai_trainer"),
+    st.Page(lambda: anomaly_center.render(st.session_state.ctx), title="AI Anomaly Center", url_path="anomaly_center"),
+    st.Page(lambda: variance_analysis.render(st.session_state.ctx), title="Variance Analysis", url_path="variance_analysis"),
+    st.Page(lambda: data_sources.render(st.session_state.ctx), title="Data Sources", url_path="data_sources"),
     st.Page(lambda: governance.render(st.session_state.ctx), title="Metric Governance",
             url_path="governance"),
 ]

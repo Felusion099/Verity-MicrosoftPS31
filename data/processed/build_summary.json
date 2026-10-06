@@ -1,10 +1,11 @@
 {
-  "generated_at": "2026-09-15T01:39:47",
+  "generated_at": "2026-10-07T04:08:08",
   "seed": 42,
   "date_start": "2024-01-01",
   "date_end": "2026-09-14",
   "rows_raw": 81768,
-  "rows_fact": 81748,
+  "fact_rows": 81748,
+  "finance_plan_rows": 0,
   "orders": 38395,
   "products": 128,
   "customers": 3500,

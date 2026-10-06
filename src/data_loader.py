@@ -33,13 +33,63 @@ JOIN DIM_TERRITORY t ON f.TerritoryKey = t.TerritoryKey
 ORDER BY d.Date, f.SalesKey
 """
 
+FINANCE_PLAN_QUERY = """
+SELECT
+    f.PlanKey, f.DateKey, f.ProductKey, f.TerritoryKey,
+    f.FinanceTarget, f.FinanceForecast, f.ExpectedRevenue, f.Budget,
+    d.Date AS PlanDate, d.Month, d.MonthName, d.Quarter, d.Year, d.FiscalYear, d.FiscalQuarter,
+    p.ProductID, p.ProductName, p.Category, p.Subcategory,
+    t.Region, t.Territory, t.Country
+FROM FACT_FINANCE_PLAN f
+JOIN DIM_DATE d      ON f.DateKey = d.DateKey
+JOIN DIM_PRODUCT p   ON f.ProductKey = p.ProductKey
+JOIN DIM_TERRITORY t ON f.TerritoryKey = t.TerritoryKey
+ORDER BY d.Date, f.PlanKey
+"""
+
 
 @st.cache_data(show_spinner="Loading enterprise sales model...")
 def load_enriched() -> pd.DataFrame:
-    """Star-schema join -> one enriched fact view (cached)."""
+    """Star-schema join -> one enriched fact view (cached), including Finance Plan data."""
     con = sqlite3.connect(config.DB_PATH)
     try:
-        df = pd.read_sql_query(FACT_QUERY, con)
+        df = pd.read_sql_query("""
+            WITH fp AS (
+                SELECT fp.*, t.Region, fp.Territory, p.Category
+                FROM FACT_FINANCE_PLAN fp
+                JOIN DIM_DATE dt ON fp.DateKey = dt.DateKey
+                JOIN DIM_PRODUCT p ON fp.ProductKey = p.ProductKey
+                JOIN DIM_TERRITORY t ON fp.TerritoryKey = t.TerritoryKey
+            )
+            SELECT
+                f.SalesKey, f.OrderID,
+                d.DateKey, d.Date AS OrderDate, d.Day, d.Week, d.Month, d.MonthName,
+                d.Quarter, d.Year, d.FiscalYear, d.FiscalQuarter,
+                p.ProductKey, p.ProductID, p.ProductName, p.Category, p.Subcategory,
+                c.CustomerKey, c.CustomerID, c.CustomerName, c.Segment,
+                t.TerritoryKey, t.Region, t.Territory, t.Country,
+                f.SalesChannel, f.UnitPrice, f.Quantity, f.GrossSales, f.DiscountRate,
+                f.DiscountAmount, f.ReturnFlag, f.ReturnAmount, f.NetRevenue, f.Cost, f.Profit,
+                fp.FinanceTarget, fp.FinanceForecast, fp.ExpectedRevenue, fp.Budget,
+                fp.FinanceTarget - (f.GrossSales - f.DiscountAmount - f.ReturnAmount) AS Variance,
+                (fp.FinanceTarget - (f.GrossSales - f.DiscountAmount - f.ReturnAmount)) / NULLIF(fp.FinanceTarget, 0) * 100 AS VariancePct
+            FROM FACT_SALES f
+            JOIN DIM_DATE d      ON f.OrderDateKey = d.DateKey
+            JOIN DIM_PRODUCT p   ON f.ProductKey   = p.ProductKey
+            JOIN DIM_CUSTOMER c  ON f.CustomerKey  = c.CustomerKey
+            JOIN DIM_TERRITORY t ON f.TerritoryKey = t.TerritoryKey
+            LEFT JOIN (
+                SELECT fp.*, t.Region, t.Territory, p.Category
+                FROM FACT_FINANCE_PLAN fp
+                JOIN DIM_DATE dt ON fp.DateKey = dt.DateKey
+                JOIN DIM_PRODUCT p ON fp.ProductKey = p.ProductKey
+                JOIN DIM_TERRITORY t ON fp.TerritoryKey = t.TerritoryKey
+            ) fp ON f.OrderDateKey = fp.DateKey
+            AND t.Region = fp.Region
+            AND t.Territory = fp.Territory
+            AND p.Category = fp.Category
+            ORDER BY d.Date, f.SalesKey
+        """, con)
     finally:
         con.close()
     df["Date"] = pd.to_datetime(df["OrderDate"])
@@ -58,6 +108,18 @@ def load_dims() -> dict[str, pd.DataFrame]:
         }
     finally:
         con.close()
+
+
+@st.cache_data(show_spinner="Loading finance plan data...")
+def load_finance_plan() -> pd.DataFrame:
+    """Load Finance Plan data joined with dimensions (cached)."""
+    con = sqlite3.connect(config.DB_PATH)
+    try:
+        df = pd.read_sql_query(FINANCE_PLAN_QUERY, con)
+    finally:
+        con.close()
+    df["Date"] = pd.to_datetime(df["PlanDate"])
+    return df
 
 
 @st.cache_data(show_spinner=False)

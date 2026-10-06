@@ -418,12 +418,302 @@ def _clean_and_build_schema(raw: pd.DataFrame, dims: dict[str, pd.DataFrame]) ->
     return {"repairs": repairs,
             "fact_rows": len(fact),
             "gross_revenue": float(fact["GrossSales"].sum()),
-            "net_revenue": float((fact["GrossSales"] - fact["DiscountAmount"] - fact["ReturnAmount"]).sum())}
+"net_revenue": float((fact["GrossSales"] - fact["DiscountAmount"] - fact["ReturnAmount"]).sum())}
 
 
 # --------------------------------------------------------------------------
-# Entry point
+# Finance Plan generation (FACT_FINANCE_PLAN)
 # --------------------------------------------------------------------------
+
+def _generate_finance_plan(rng: np.random.Generator, date_dim: pd.DataFrame,
+                           product_dim: pd.DataFrame, territory_dim: pd.DataFrame) -> pd.DataFrame:
+    """Generate Finance Plan/Target data (FACT_FINANCE_PLAN).
+    
+    Contains Finance Targets, Budgets, Forecasts, Expected Revenue
+    by Date, Region, Territory, Product, Category.
+    Shares the same analytical dimensions as FACT_SALES.
+    """
+    start = date_dim["Date"].min().date()
+    end = date_dim["Date"].max().date()
+    
+    # Build monthly periods - generate for each month start
+    month_starts = pd.date_range(start, end, freq="MS")
+    
+    # Territory specs with Finance Plan weights
+    region_names = list(REGION_SPECS.keys())
+    region_weights = np.array([config.FINANCE_PLAN_REGION_WEIGHTS.get(r, 0.0) for r in region_names])
+    region_growth = np.array([REGION_SPECS[r]["growth"] for r in region_names])
+    
+    # Monthly factors for Finance Plan
+    monthly_factors = config.FINANCE_PLAN_MONTHLY_FACTORS
+    
+    # Territory to region mapping
+    terr_to_region = territory_dim.set_index("TerritoryKey")["Region"].to_dict()
+    terr_names = territory_dim["TerritoryKey"].tolist()
+    
+    # Date dimension lookup
+    date_to_key = date_dim.set_index("Date")["DateKey"].to_dict()
+    
+    # Annual targets from config
+    annual_target = config.FINANCE_PLAN_ANNUAL_TARGET
+    monthly_target_base = config.FINANCE_PLAN_MONTHLY_TARGET
+    quarterly_target = config.FINANCE_PLAN_QUARTERLY_TARGET
+    
+    rows = []
+    plan_key = 0
+    
+    # Get category list and weights
+    categories = list(config.FINANCE_PLAN_CATEGORY_WEIGHTS.keys())
+    cat_weights = np.array([config.FINANCE_PLAN_CATEGORY_WEIGHTS.get(c, 0.0) for c in categories])
+    
+    # Regional demand mix drifts over time
+    region_names = list(REGION_SPECS.keys())
+    region_base_weights = np.array([config.FINANCE_PLAN_REGION_WEIGHTS.get(r, 0.0) for r in region_names])
+    region_growth = np.array([REGION_SPECS[r]["growth"] for r in region_names])
+    
+    # Generate monthly targets per region, territory, category
+    for day in pd.date_range(start, end, freq="MS"):  # MS = month start
+        months_since_start = (day.year - 2024) * 12 + (day.month - 1)
+        growth = (1 + config.ANNUAL_GROWTH) ** (months_since_start / 12)
+        
+        # Monthly noise for Finance Plan
+        month_noise = rng.uniform(0.95, 1.05)
+        
+        # Regional demand mix drifts over time
+        rw = np.array([config.FINANCE_PLAN_REGION_WEIGHTS.get(r, 0.0) for r in region_names])
+        rw = rw * region_growth ** months_since_start
+        rw = rw / rw.sum()
+        
+        for region in region_names:
+            terr_spec = REGION_SPECS[region]["territories"]
+            territories = list(terr_spec.keys())
+            terr_weights = np.array(list(terr_spec.values()))
+            terr_weights = terr_weights / terr_weights.sum()
+            
+            for territory in territories:
+                # Get territory weight within region
+                terr_spec = REGION_SPECS[region]["territories"]
+                territory_weight = terr_spec.get(territory, 0.0)
+                
+                for category in categories:
+                    cat_weight = config.FINANCE_PLAN_CATEGORY_WEIGHTS.get(category, 0.0)
+                    if cat_weight == 0:
+                        continue
+                    
+                    # Base target for this combination
+                    region_weight = config.FINANCE_PLAN_REGION_WEIGHTS.get(region, 0.0)
+                    cat_weight = config.FINANCE_PLAN_CATEGORY_WEIGHTS.get(category, 0.0)
+                    
+                    if cat_weight == 0:
+                        continue
+                    
+                    # Base monthly target for this combination
+                    base_monthly = (config.FINANCE_PLAN_MONTHLY_TARGET * 
+                                   config.FINANCE_PLAN_REGION_WEIGHTS.get(region, 0.0) * 
+                                   config.FINANCE_PLAN_CATEGORY_WEIGHTS.get(category, 0.0))
+                    
+                    # Apply growth, seasonality, noise
+                    monthly_factor = config.FINANCE_PLAN_MONTHLY_FACTORS.get(day.month, 1.0)
+                    noise = rng.uniform(0.95, 1.05)
+                    growth_factor = (1 + config.ANNUAL_GROWTH) ** (months_since_start / 12)
+                    
+                    monthly_target = (base_monthly * growth_factor * 
+                                    monthly_factor * noise)
+                    
+                    # Finance Forecast - slightly different from target (Finance's view)
+                    forecast = monthly_target * rng.uniform(0.98, 1.02)
+                    
+                    # Expected Revenue - what Finance expects to actually collect
+                    expected_revenue = monthly_target * rng.uniform(0.95, 1.02)
+                    
+                    # Budget - typically higher than target
+                    budget = monthly_target * rng.uniform(1.02, 1.08)
+                    
+                    date_key = int(day.strftime("%Y%m%d"))
+                    
+                    rows.append({
+                        "PlanKey": len(rows) + 1,
+                        "DateKey": int(day.strftime("%Y%m%d")),
+                        "Date": day.strftime("%Y-%m-%d"),
+                        "Year": day.year,
+                        "Month": day.month,
+                        "Quarter": f"Q{(day.month - 1) // 3 + 1}",
+                        "FiscalYear": day.year + (1 if day.month >= 4 else 0),
+                        "FiscalQuarter": f"FQ{((day.month - 1) % 12) // 3 + 1}",
+                        "Region": region,
+                        "Territory": territory,
+                        "Category": category,
+                        "FinanceTarget": round(monthly_target, 2),
+                        "FinanceForecast": round(forecast, 2),
+                        "ExpectedRevenue": round(expected_revenue, 2),
+                        "Budget": round(budget, 2),
+                    })
+    
+    return pd.DataFrame(rows)
+
+
+def _build_finance_plan_dim() -> pd.DataFrame:
+    """Build DIM_FINANCE_PLAN dimension table."""
+    # For now, we'll use the same dimensions as sales
+    # In a real scenario, this might have additional attributes
+    return pd.DataFrame()
+
+
+def _clean_and_build_schema(raw: pd.DataFrame, dims: dict[str, pd.DataFrame], force: bool = False) -> dict:
+    """Generate the dataset and build the SQLite star schema (idempotent)."""
+    if config.DB_PATH.exists() and config.BUILD_SUMMARY_PATH.exists() and not force:
+        return json.loads(config.BUILD_SUMMARY_PATH.read_text())
+
+    rng = np.random.default_rng(config.DATA_SEED)
+    start = date.fromisoformat(config.DATE_START)
+    end = date.fromisoformat(config.DATE_END)
+
+    date_dim = _build_date_dim(start, end)
+    product_dim = _build_product_dim(rng)
+    customer_dim = _build_customer_dim(rng)
+    territory_dim = _build_territory_dim()
+
+    fact_clean = _generate_fact(rng, date_dim, product_dim, customer_dim)
+    raw = _inject_dirty_data(fact_clean, rng)
+
+    config.DATA_RAW_DIR.mkdir(parents=True, exist_ok=True)
+    raw.to_csv(config.RAW_CSV_PATH, index=False)
+
+    dims = {"date": date_dim, "product": product_dim,
+            "customer": customer_dim, "territory": territory_dim}
+    
+    # Build the star schema - this is the actual implementation
+    # (the outer function just handles the idempotent case)
+    result = _build_star_schema(rng, date_dim, product_dim, customer_dim, territory_dim, raw, dims)
+
+    summary = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "seed": config.DATA_SEED,
+        "date_start": config.DATE_START,
+        "date_end": config.DATE_END,
+        "rows_raw": int(len(raw)),
+        "rows_fact": result["fact_rows"],
+        "orders": int(fact_clean["OrderID"].nunique()),
+        "products": int(len(product_dim)),
+        "customers": int(len(customer_dim)),
+        "regions": int(len(REGION_SPECS)),
+        "territories": int(len(territory_dim)),
+        "gross_revenue": result["gross_revenue"],
+        "net_revenue": result["net_revenue"],
+        "repairs": result["repairs"],
+    }
+    config.DATA_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    config.BUILD_SUMMARY_PATH.write_text(json.dumps(summary, indent=2))
+    return summary
+
+
+def _build_star_schema(rng: np.random.Generator, date_dim: pd.DataFrame,
+                       product_dim: pd.DataFrame, customer_dim: pd.DataFrame,
+                       territory_dim: pd.DataFrame, raw: pd.DataFrame,
+                       dims: dict[str, pd.DataFrame]) -> dict:
+    """Build the complete star schema including FACT_SALES and FACT_FINANCE_PLAN."""
+    # Clean the raw data and map to surrogate keys
+    typo_fix = {v.lower(): k for k, v in REGION_TYPO_MAP.items()}
+    lower = raw["Region"].astype(str).str.strip().str.lower()
+    fixed = lower.isin(typo_fix)
+    raw.loc[fixed, "Region"] = lower.loc[fixed].map(typo_fix)
+
+    before = len(raw)
+    dates = raw["OrderDate"].astype(str).str.strip()
+    raw = raw[dates != ""].copy()
+    missing_dates_dropped = before - len(raw)
+
+    before = len(raw)
+    raw = raw.drop_duplicates(subset=["SalesKey"], keep="first")
+    duplicate_rows_removed = before - len(raw)
+
+    # Surrogate key mapping
+    date_key = raw["OrderDate"].str[:10].str.replace("-", "", regex=False).astype(int)
+    prod_map = dims["product"].set_index("ProductName")["ProductKey"]
+    cust_map = dims["customer"].set_index("CustomerID")["CustomerKey"]
+    terr_map = dims["territory"].set_index(["Region", "Territory"])["TerritoryKey"]
+
+    fact_sales = pd.DataFrame({
+        "SalesKey": raw["SalesKey"].astype(int),
+        "OrderID": raw["OrderID"],
+        "OrderDateKey": date_key,
+        "ProductKey": raw["ProductName"].map(prod_map).astype(int),
+        "CustomerKey": raw["CustomerID"].map(cust_map).astype(int),
+        "TerritoryKey": pd.MultiIndex.from_arrays([raw["Region"], raw["Territory"]]).map(terr_map).astype(int),
+        "SalesChannel": raw["SalesChannel"],
+        "UnitPrice": raw["UnitPrice"].astype(float),
+        "Quantity": raw["Quantity"].astype(int),
+        "GrossSales": raw["GrossSales"].astype(float),
+        "DiscountRate": raw["DiscountRate"].astype(float),
+        "DiscountAmount": raw["DiscountAmount"].astype(float),
+        "ReturnFlag": raw["ReturnFlag"].astype(int),
+        "ReturnAmount": raw["ReturnAmount"].astype(float),
+        "NetRevenue": raw["NetRevenue"].astype(float),
+        "Cost": raw["Cost"].astype(float),
+        "Profit": raw["Profit"].astype(float),
+    })
+
+    # Generate Finance Plan
+    finance_plan = _generate_finance_plan(rng, dims["date"], dims["product"], dims["territory"])
+
+    # Map Finance Plan to surrogate keys
+    fp_date_key = finance_plan["DateKey"]
+    fp_prod_key = finance_plan["Category"].map(
+        dims["product"].groupby("Category")["ProductKey"].first()
+    ).astype(int)
+    fp_terr_key = finance_plan.apply(
+        lambda r: dims["territory"][
+            (dims["territory"]["Region"] == r["Region"]) & 
+            (dims["territory"]["Territory"] == r["Territory"])
+        ]["TerritoryKey"].values[0], axis=1
+    )
+
+    fact_finance = pd.DataFrame({
+        "PlanKey": finance_plan["PlanKey"].astype(int),
+        "DateKey": fp_date_key.astype(int),
+        "ProductKey": fp_prod_key.astype(int),
+        "TerritoryKey": fp_terr_key.astype(int),
+        "FinanceTarget": finance_plan["FinanceTarget"].astype(float),
+        "FinanceForecast": finance_plan["FinanceForecast"].astype(float),
+        "ExpectedRevenue": finance_plan["ExpectedRevenue"].astype(float),
+        "Budget": finance_plan["Budget"].astype(float),
+    })
+
+    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(config.DB_PATH)
+    try:
+        dims["date"].to_sql("DIM_DATE", con, if_exists="replace", index=False)
+        dims["product"].to_sql("DIM_PRODUCT", con, if_exists="replace", index=False)
+        dims["customer"].to_sql("DIM_CUSTOMER", con, if_exists="replace", index=False)
+        dims["territory"].to_sql("DIM_TERRITORY", con, if_exists="replace", index=False)
+        fact_sales.to_sql("FACT_SALES", con, if_exists="replace", index=False)
+        fact_finance.to_sql("FACT_FINANCE_PLAN", con, if_exists="replace", index=False)
+        con.execute("CREATE INDEX IF NOT EXISTS ix_fact_date ON FACT_SALES(OrderDateKey)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_fact_product ON FACT_SALES(ProductKey)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_fact_region ON FACT_SALES(TerritoryKey)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_fp_date ON FACT_FINANCE_PLAN(DateKey)")
+        con.execute("CREATE INDEX IF NOT EXISTS ix_fp_region ON FACT_FINANCE_PLAN(TerritoryKey)")
+        con.commit()
+    finally:
+        con.close()
+
+    repairs = {
+        "region_typos_standardized": int(fixed.sum()),
+        "missing_order_dates_dropped": int(missing_dates_dropped),
+        "duplicate_rows_removed": int(duplicate_rows_removed),
+    }
+
+    gross_revenue = float(fact_sales["GrossSales"].sum())
+    net_revenue = float((fact_sales["GrossSales"] - fact_sales["DiscountAmount"] - fact_sales["ReturnAmount"]).sum())
+
+    return {
+        "fact_rows": len(fact_sales),
+        "finance_plan_rows": len(fact_finance),
+        "gross_revenue": gross_revenue,
+        "net_revenue": net_revenue,
+        "repairs": repairs,
+    }
+
 
 def generate_all(force: bool = False) -> dict:
     """Generate the dataset and build the SQLite star schema (idempotent)."""
@@ -447,7 +737,8 @@ def generate_all(force: bool = False) -> dict:
 
     dims = {"date": date_dim, "product": product_dim,
             "customer": customer_dim, "territory": territory_dim}
-    result = _clean_and_build_schema(raw, dims)
+
+    result = _clean_and_build_schema(raw, dims, force=force)
 
     summary = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -455,7 +746,8 @@ def generate_all(force: bool = False) -> dict:
         "date_start": config.DATE_START,
         "date_end": config.DATE_END,
         "rows_raw": int(len(raw)),
-        "rows_fact": result["fact_rows"],
+        "fact_rows": result["rows_fact"],
+        "finance_plan_rows": result.get("finance_plan_rows", 0),
         "orders": int(fact_clean["OrderID"].nunique()),
         "products": int(len(product_dim)),
         "customers": int(len(customer_dim)),

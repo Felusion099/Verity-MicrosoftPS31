@@ -42,6 +42,41 @@ MONTHLY_TARGET = 44_000_000
 QUARTERLY_TARGET = 102_000_000
 ANNUAL_TARGET = 445_000_000
 
+# --------------------------------------------------- finance plan targets (INR)
+# Finance Plan layer — calibrated so overall achievement ~88-92%,
+# West underperforming (~80-85%), North outperforming (~95-100%).
+# These are used as the Finance Plan targets for the Finance ↔ Sales page.
+FINANCE_PLAN_MONTHLY_TARGET = 44_000_000
+FINANCE_PLAN_QUARTERLY_TARGET = 102_000_000
+FINANCE_PLAN_ANNUAL_TARGET = 445_000_000
+
+# Regional distribution for Finance Plan targets (must sum to 1.0)
+FINANCE_PLAN_REGION_WEIGHTS = {
+    "North": 0.28,
+    "South": 0.26,
+    "West": 0.30,
+    "East": 0.10,
+    "Central": 0.06,
+}
+
+# Category weights for Finance Plan (must sum to 1.0)
+FINANCE_PLAN_CATEGORY_WEIGHTS = {
+    "Electronics": 0.28,
+    "Home Appliances": 0.22,
+    "Furniture": 0.15,
+    "Office Supplies": 0.10,
+    "Apparel": 0.08,
+    "Sports & Fitness": 0.17,
+}
+
+# Monthly growth/decline factors for Finance Plan (seasonality)
+FINANCE_PLAN_MONTHLY_FACTORS = {
+    1: 0.92, 2: 0.90, 3: 1.12,  # Q4 FY / Q1 CY
+    4: 0.95, 5: 0.98, 6: 0.90,  # Q1 FY
+    7: 0.97, 8: 1.00, 9: 1.03,  # Q2 FY
+    10: 1.15, 11: 1.22, 12: 1.08,  # Q3 FY (festive)
+}
+
 # ------------------------------------------------------------- demo RBAC
 # Local simulation of territory-based row-level security. In production this
 # would be driven by enterprise identity (Entra ID) — see README.
@@ -50,6 +85,9 @@ ROLES = {
     "Finance": {"regions": None, "label": "Full access — all regions (global finance)"},
     "North Sales Manager": {"regions": ["North"], "label": "Restricted — North region only"},
     "South Sales Manager": {"regions": ["South"], "label": "Restricted — South region only"},
+    "East Sales Manager": {"regions": ["East"], "label": "Restricted — East region only"},
+    "West Sales Manager": {"regions": ["West"], "label": "Restricted — West region only"},
+    "Finance Manager": {"regions": None, "label": "Full access — all regions (finance)"},
 }
 DEFAULT_ROLE = "Executive"
 
