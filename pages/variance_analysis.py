@@ -215,7 +215,7 @@ def render(ctx: dict) -> None:
             customdata=[format_inr(v) for v in var_df["FinanceTarget"]],
         ))
         fig.update_layout(title="Variance vs Finance Target by Region (₹ Cr)", height=340)
-        st.plotly_chart(fig, use_container_width=True, key="var_region")
+        st.plotly_chart(fig, width="stretch", key="var_region")
 
     st.markdown("")
 
@@ -236,7 +236,7 @@ def render(ctx: dict) -> None:
         customdata=[format_inr(v) for v in terr_var["FinanceTarget"]],
     ))
     fig.update_layout(title="Variance by Territory (₹ Cr)", height=400)
-    st.plotly_chart(fig, use_container_width=True, key="var_terr")
+    st.plotly_chart(fig, width="stretch", key="var_terr")
 
     st.markdown("")
 
@@ -253,7 +253,7 @@ def render(ctx: dict) -> None:
                  text=cat_var["Variance"].apply(lambda x: format_inr(x)),
                  title="Variance by Category (₹ Cr)")
     fig.update_layout(height=350)
-    st.plotly_chart(fig, use_container_width=True, key="var_cat")
+    st.plotly_chart(fig, width="stretch", key="var_cat")
 
     st.markdown("")
 
@@ -285,4 +285,4 @@ def render(ctx: dict) -> None:
         name="Finance Forecast", line=dict(color="#22d3ee", width=1.6, dash="dot", shape="spline"),
     ))
     fig.update_layout(yaxis_title="Net Revenue (₹ Cr)", hovermode="x unified", height=360)
-    st.plotly_chart(fig, use_container_width=True, key="var_monthly")
+    st.plotly_chart(fig, width="stretch", key="var_monthly")
